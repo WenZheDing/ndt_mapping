@@ -164,6 +164,12 @@ void CallbackLidar(const sensor_msgs::PointCloud2::ConstPtr pcloud)
         tmp_t = pointcloud_q.back().matrix().inverse() * (pointcloud_t[id] - pointcloud_t.back());
         *tmp += *transformPointCloud(tmp_q, tmp_t, CloudFrames[id]);
     }
+    tmp->width=tmp->points.size();
+	tmp->height=1;
+    sensor_msgs::PointCloud2 output;
+	pcl::toROSMsg(*tmp, output);
+	output.header.frame_id = "conch";
+    pub_merged_cloud.publish(output);
     createLocalMap(tmp);
 }
 
@@ -186,8 +192,8 @@ int main(int argc, char **argv)
     ros::Subscriber subLidar = nh.subscribe("/lidar_aeb/raw_points", 1, &CallbackLidar);
     ros::Subscriber subPose = nh.subscribe("/imu_pose", 1, &CallbackPose);
 	pub_map = nh.advertise<nav_msgs::OccupancyGrid>("/occupancy_grid_map", 1);
+    pub_merged_cloud = nh.advertise<sensor_msgs::PointCloud2>("/merged_cloud", 1);
   
-
     ros::Rate rate(100);
     while(ros::ok())
     {
