@@ -17,13 +17,14 @@ using namespace std;
 vector<pcl::PointCloud<pcl::PointXYZI>::Ptr> CloudFrames;
 vector<Eigen::Quaterniond, Eigen::aligned_allocator<Eigen::Quaterniond>> pointcloud_q;
 vector<Eigen::Vector3d, Eigen::aligned_allocator<Eigen::Vector3d>> pointcloud_t;
-Eigen::Quaterniond last_q;
-Eigen::Vector3d last_t;
 bool pose_received = false;
 ros::Publisher pub_map, pub_merged_cloud;
 double d_width1 = -40.0, d_width2 = 40.0, d_height1 = -40.0, d_height2 = 40.0, d_z1 = -2.6, d_z2 = 0.2, \
 d_ego_left = 1.2, d_ego_right = -1.1, d_ego_front = 2.9, d_ego_back = -1.8, d_ego_top = 0.3, d_ego_bottom = -2.1,\
 d_resolution = 0.5, d_height_diff = 0.2, i_max_thresh = 2, i_mid_thresh = 2, i_min_thresh = 2;
+vector<Eigen::Quaterniond> map_q_;
+vector<Eigen::Vector3d> map_t_;
+vector<double> map_time_;
 #define MAX_OGM std::numeric_limits<float>::max()
 #define MIN_OGM -std::numeric_limits<float>::max()
 
@@ -195,7 +196,9 @@ void CallbackLidar(const sensor_msgs::PointCloud2::ConstPtr pcloud)
         R << trans(0, 0), trans(0, 1), trans(0, 2), trans(1, 0), trans(1, 1), trans(1, 2), trans(2, 0), trans(2, 1), trans(2, 2);
         q=Eigen::Quaterniond(R);
         pcl::PointCloud<pcl::PointXYZI>::Ptr trans(new pcl::PointCloud<pcl::PointXYZI>());
-        trans = transformPointCloud(q, t, CloudFrames[id]);
+        // trans = transformPointCloud(q, t, CloudFrames[id]);
+        trans = transformPointCloud(tmp_q, tmp_t, CloudFrames[id]);
+
         *tmp += *trans;
         // debug : save pcd
         if(CloudFrames.size() == 20)
@@ -238,11 +241,16 @@ void CallbackLidar(const sensor_msgs::PointCloud2::ConstPtr pcloud)
 void CallbackPose(const geometry_msgs::Point::ConstPtr point)
 {
     Eigen::Matrix3d R; 
+    Eigen::Quaterniond last_q;
+    Eigen::Vector3d last_t;
     R = Eigen::AngleAxisd(point->z*M_PI/180, Eigen::Vector3d::UnitZ()) * 
                       Eigen::AngleAxisd(0, Eigen::Vector3d::UnitY()) * 
                       Eigen::AngleAxisd(0, Eigen::Vector3d::UnitX());
     last_q = Eigen::Quaterniond(R);
     last_t = Eigen::Vector3d(point->x, point->y, 0);
+    map_q_.push_back(last_q);
+    map_t_.push_back(last_t);
+    // map_time_.push_back(point.stamp.toSec());
     pose_received = true;
 }
 
