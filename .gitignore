@@ -2,4 +2,5 @@ build
 devel
 refer
 logs
+src/local/PCD
 .catkin_tools

@@ -127,11 +127,11 @@ void createLocalMap(const pcl::PointCloud<pcl::PointXYZI>::Ptr merged_cloud)
             // }
             if (vt_classify_min[i][j].size() >= i_min_thresh && vt_classify_mid[i][j].size() >= i_mid_thresh &&
                 vt_classify_max[i][j].size() >= i_max_thresh) {
-                std::cout << "max is " << vt_classify_max[i][j].size()
-                          << "\tmid is " << vt_classify_mid[i][j].size()
-                          << "\tmin is " << vt_classify_min[i][j].size()
-                          << std::endl;
-                printf("The height range of this grid is (%.2f, %.2f)", vt_minheight[i][j], vt_maxheight[i][j]);
+                // std::cout << "max is " << vt_classify_max[i][j].size()
+                //           << "\tmid is " << vt_classify_mid[i][j].size()
+                //           << "\tmin is " << vt_classify_min[i][j].size()
+                //           << std::endl;
+                // printf("The height range of this grid is (%.2f, %.2f)", vt_minheight[i][j], vt_maxheight[i][j]);
                 map.data[index] = 100;
             }
         }
@@ -161,39 +161,52 @@ void CallbackLidar(const sensor_msgs::PointCloud2::ConstPtr pcloud)
     pcl::PointCloud<pcl::PointXYZI>::Ptr palign;
     Eigen::Matrix4f trans(Eigen::Matrix4f::Identity());
     //TicToc ndt_time;
-    for(int i = 1; i < 10; i++)
-    {
     anh_ndt.reset(new pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>());
     anh_ndt->setResolution(1.0);
-    anh_ndt->setMaximumIterations(20);
-    anh_ndt->setStepSize(0.1);
-    anh_ndt->setTransformationEpsilon(0.01);
+    anh_ndt->setMaximumIterations(50);
+    anh_ndt->setStepSize(0.05);
+    anh_ndt->setTransformationEpsilon(0.0001);
     anh_ndt->setNumThreads(4);
     anh_ndt->setNeighborhoodSearchMethod(pclomp::DIRECT7);
-    palign.reset(new pcl::PointCloud<pcl::PointXYZI>());
-    //init
-    int id = CloudFrames.size() - i;
-    if(id < 0) break;
-    tmp_R = pointcloud_q.back().matrix().inverse() * pointcloud_q[id].matrix();
-    tmp_q = Eigen::Quaterniond(tmp_R);
-    tmp_t = pointcloud_q.back().matrix().inverse() * (pointcloud_t[id] - pointcloud_t.back());
-    Eigen::Translation3d init_translation(tmp_t(0), tmp_t(1), tmp_t(2));
-    Eigen::AngleAxisd init_rotation(tmp_q);
-    Eigen::Matrix4d init_guess = (init_translation * init_rotation) * Eigen::Matrix4d::Identity();
-    anh_ndt->setInputSource(CloudFrames[id]);
-    anh_ndt->setInputTarget(CloudFrames.back());
-    anh_ndt->align(*palign, init_guess.cast<float>());
-    trans = anh_ndt->getFinalTransformation();
-    int iteration = anh_ndt->getFinalNumIteration();
-    cout<<"iteration:"<<iteration<<endl;
-    bool converged = anh_ndt->hasConverged();
-    //double ndtTime = ndt_time.toc();
-    Eigen::Vector3d t(trans(0, 3), trans(1, 3), trans(2, 3));
-    Eigen::Matrix3d R;
-    Eigen::Quaterniond q;
-    R << trans(0, 0), trans(0, 1), trans(0, 2), trans(1, 0), trans(1, 1), trans(1, 2), trans(2, 0), trans(2, 1), trans(2, 2);
-    q=Eigen::Quaterniond(R);
-    *tmp += *transformPointCloud(q, t, CloudFrames[id]);
+    for(int i = 1; i < 20; i += 5)
+    {
+        palign.reset(new pcl::PointCloud<pcl::PointXYZI>());
+        //init
+        int id = CloudFrames.size() - i;
+        if(id < 0) break;
+        tmp_R = pointcloud_q.back().matrix().inverse() * pointcloud_q[id].matrix();
+        tmp_q = Eigen::Quaterniond(tmp_R);
+        tmp_t = pointcloud_q.back().matrix().inverse() * (pointcloud_t[id] - pointcloud_t.back());
+        Eigen::Translation3d init_translation(tmp_t(0), tmp_t(1), tmp_t(2));
+        Eigen::AngleAxisd init_rotation(tmp_q);
+        Eigen::Matrix4d init_guess = (init_translation * init_rotation) * Eigen::Matrix4d::Identity();
+        anh_ndt->setInputSource(CloudFrames[id]);
+        anh_ndt->setInputTarget(CloudFrames.back());
+        anh_ndt->align(*palign, init_guess.cast<float>());
+        trans = anh_ndt->getFinalTransformation();
+        int iteration = anh_ndt->getFinalNumIteration();
+        bool converged = anh_ndt->hasConverged();
+        cout<<"iteration: "<<iteration<<endl;
+        cout<<"converged: "<<converged<<endl;
+        //double ndtTime = ndt_time.toc();
+        Eigen::Vector3d t(trans(0, 3), trans(1, 3), trans(2, 3));
+        Eigen::Matrix3d R;
+        Eigen::Quaterniond q;
+        R << trans(0, 0), trans(0, 1), trans(0, 2), trans(1, 0), trans(1, 1), trans(1, 2), trans(2, 0), trans(2, 1), trans(2, 2);
+        q=Eigen::Quaterniond(R);
+        pcl::PointCloud<pcl::PointXYZI>::Ptr trans(new pcl::PointCloud<pcl::PointXYZI>());
+        trans = transformPointCloud(q, t, CloudFrames[id]);
+        *tmp += *trans;
+        // debug : save pcd
+        if(CloudFrames.size() == 20)
+        {
+            string source_pcd = string(ROOT_DIR) + "PCD/" + to_string(id) +".pcd";
+            string transformed_source_pcd = string(ROOT_DIR) + "PCD/" + to_string(id) + "_" + to_string(CloudFrames.size() - 1) + "trans.pcd";
+            string target_pcd = string(ROOT_DIR) + "PCD/" + to_string(CloudFrames.size() - 1) +".pcd";
+            pcl::io::savePCDFileASCII(source_pcd, *CloudFrames[id]);
+            pcl::io::savePCDFileASCII(transformed_source_pcd, *trans);
+            pcl::io::savePCDFileASCII(target_pcd, *CloudFrames.back());
+        }
     }
    /* for(int i = 1; i < 2; i++)
     {
@@ -225,7 +238,7 @@ void CallbackLidar(const sensor_msgs::PointCloud2::ConstPtr pcloud)
 void CallbackPose(const geometry_msgs::Point::ConstPtr point)
 {
     Eigen::Matrix3d R; 
-    R = Eigen::AngleAxisd((point->z - 90)*M_PI/180, Eigen::Vector3d::UnitZ()) * 
+    R = Eigen::AngleAxisd(point->z*M_PI/180, Eigen::Vector3d::UnitZ()) * 
                       Eigen::AngleAxisd(0, Eigen::Vector3d::UnitY()) * 
                       Eigen::AngleAxisd(0, Eigen::Vector3d::UnitX());
     last_q = Eigen::Quaterniond(R);

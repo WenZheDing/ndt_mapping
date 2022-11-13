@@ -24,6 +24,8 @@ find_package(Eigen3)
 find_package(PCL 1.8 REQUIRED)
 link_directories(${PCL_LIBRARY_DIRS})
 
+add_definitions(-DROOT_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/\")
+
 
 ## Uncomment this if the package has a setup.py. This macro ensures
 ## modules and global scripts declared therein get installed
