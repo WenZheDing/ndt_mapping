@@ -8,6 +8,7 @@
 #include <pcl/point_types.h>
 #include <pcl_conversions/pcl_conversions.h>
 #include <Eigen/Dense>
+#include <pclomp/ndt_omp.h>
 
 
 
@@ -155,7 +156,46 @@ void CallbackLidar(const sensor_msgs::PointCloud2::ConstPtr pcloud)
     pointcloud_t.push_back(last_t);
 
     pcl::PointCloud<pcl::PointXYZI>::Ptr tmp(new pcl::PointCloud<pcl::PointXYZI>());
+    //ndt
+    pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr anh_ndt;
+    pcl::PointCloud<pcl::PointXYZI>::Ptr palign;
+    Eigen::Matrix4f trans(Eigen::Matrix4f::Identity());
+    //TicToc ndt_time;
     for(int i = 1; i < 10; i++)
+    {
+    anh_ndt.reset(new pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>());
+    anh_ndt->setResolution(1.0);
+    anh_ndt->setMaximumIterations(20);
+    anh_ndt->setStepSize(0.1);
+    anh_ndt->setTransformationEpsilon(0.01);
+    anh_ndt->setNumThreads(4);
+    anh_ndt->setNeighborhoodSearchMethod(pclomp::DIRECT7);
+    palign.reset(new pcl::PointCloud<pcl::PointXYZI>());
+    //init
+    int id = CloudFrames.size() - i;
+    if(id < 0) break;
+    tmp_R = pointcloud_q.back().matrix().inverse() * pointcloud_q[id].matrix();
+    tmp_q = Eigen::Quaterniond(tmp_R);
+    tmp_t = pointcloud_q.back().matrix().inverse() * (pointcloud_t[id] - pointcloud_t.back());
+    Eigen::Translation3d init_translation(tmp_t(0), tmp_t(1), tmp_t(2));
+    Eigen::AngleAxisd init_rotation(tmp_q);
+    Eigen::Matrix4d init_guess = (init_translation * init_rotation) * Eigen::Matrix4d::Identity();
+    anh_ndt->setInputSource(CloudFrames[id]);
+    anh_ndt->setInputTarget(CloudFrames.back());
+    anh_ndt->align(*palign, init_guess.cast<float>());
+    trans = anh_ndt->getFinalTransformation();
+    int iteration = anh_ndt->getFinalNumIteration();
+    cout<<"iteration:"<<iteration<<endl;
+    bool converged = anh_ndt->hasConverged();
+    //double ndtTime = ndt_time.toc();
+    Eigen::Vector3d t(trans(0, 3), trans(1, 3), trans(2, 3));
+    Eigen::Matrix3d R;
+    Eigen::Quaterniond q;
+    R << trans(0, 0), trans(0, 1), trans(0, 2), trans(1, 0), trans(1, 1), trans(1, 2), trans(2, 0), trans(2, 1), trans(2, 2);
+    q=Eigen::Quaterniond(R);
+    *tmp += *transformPointCloud(q, t, CloudFrames[id]);
+    }
+   /* for(int i = 1; i < 2; i++)
     {
         int id = CloudFrames.size() - i;
         if(id < 0) break;
@@ -163,7 +203,16 @@ void CallbackLidar(const sensor_msgs::PointCloud2::ConstPtr pcloud)
         tmp_q = Eigen::Quaterniond(tmp_R);
         tmp_t = pointcloud_q.back().matrix().inverse() * (pointcloud_t[id] - pointcloud_t.back());
         *tmp += *transformPointCloud(tmp_q, tmp_t, CloudFrames[id]);
-    }
+    }*/
+    /*
+    int i=10;
+    int id = CloudFrames.size() - i;
+    if(id >=0) {
+    tmp_R = pointcloud_q.back().matrix().inverse() * pointcloud_q[id].matrix();
+    tmp_q = Eigen::Quaterniond(tmp_R);
+    tmp_t = pointcloud_q.back().matrix().inverse() * (pointcloud_t[id] - pointcloud_t.back());
+    *tmp = *transformPointCloud(tmp_q, tmp_t, CloudFrames[id]);
+    }*/
     tmp->width=tmp->points.size();
 	tmp->height=1;
     sensor_msgs::PointCloud2 output;
@@ -193,7 +242,7 @@ int main(int argc, char **argv)
     ros::Subscriber subPose = nh.subscribe("/imu_pose", 1, &CallbackPose);
 	pub_map = nh.advertise<nav_msgs::OccupancyGrid>("/occupancy_grid_map", 1);
     pub_merged_cloud = nh.advertise<sensor_msgs::PointCloud2>("/merged_cloud", 1);
-  
+
     ros::Rate rate(100);
     while(ros::ok())
     {

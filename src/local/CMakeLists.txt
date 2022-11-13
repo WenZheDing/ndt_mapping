@@ -14,6 +14,7 @@ find_package(catkin REQUIRED COMPONENTS
     geometry_msgs
     pcl_conversions
     pcl_ros
+    ndt_omp
 )
 
 ## System dependencies are found with CMake's conventions
