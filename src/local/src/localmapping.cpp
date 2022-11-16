@@ -9,6 +9,7 @@
 #include <pcl_conversions/pcl_conversions.h>
 #include <Eigen/Dense>
 #include <pcl/filters/voxel_grid.h>
+#include <pcl-1.8/pcl/registration/icp.h>
 #include <pclomp/ndt_omp.h>
 #include "tic_toc.h"
 
@@ -147,7 +148,7 @@ void CallbackLidar(const sensor_msgs::PointCloud2::ConstPtr pcloud)
 {
     double coff = -1;
     pcl::VoxelGrid<pcl::PointXYZI> downSizeFilter;
-    downSizeFilter.setLeafSize(0.5, 0.5, 0.5); 
+    downSizeFilter.setLeafSize(1.0, 1.0, 1.0); 
     if(!pose_received) return;
     if (pcloud != NULL)
     {
@@ -188,20 +189,30 @@ void CallbackLidar(const sensor_msgs::PointCloud2::ConstPtr pcloud)
     pointcloud_t.push_back(t);
 
     pcl::PointCloud<pcl::PointXYZI>::Ptr tmp(new pcl::PointCloud<pcl::PointXYZI>());
+    pcl::PointCloud<pcl::PointXYZI>::Ptr source(new pcl::PointCloud<pcl::PointXYZI>());
+    pcl::PointCloud<pcl::PointXYZI>::Ptr target(new pcl::PointCloud<pcl::PointXYZI>());
     //ndt
-    pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr anh_ndt;
     pcl::PointCloud<pcl::PointXYZI>::Ptr palign;
     Eigen::Matrix4f trans(Eigen::Matrix4f::Identity());
     //TicToc ndt_time;
-    anh_ndt.reset(new pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>());
-    anh_ndt->setResolution(0.5);
-    anh_ndt->setMaximumIterations(200);
-    anh_ndt->setStepSize(0.05);
-    anh_ndt->setTransformationEpsilon(1e-6);
-    anh_ndt->setEuclideanFitnessEpsilon(1e-6);
-    anh_ndt->setNumThreads(4);
-    anh_ndt->setNeighborhoodSearchMethod(pclomp::DIRECT26);
-    for(int i = 1; i < 20; i += 5)
+    // pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>::Ptr anh_ndt;
+    // anh_ndt.reset(new pclomp::NormalDistributionsTransform<pcl::PointXYZI, pcl::PointXYZI>());
+    // anh_ndt->setResolution(0.5);
+    // anh_ndt->setMaximumIterations(200);
+    // anh_ndt->setStepSize(0.05);
+    // anh_ndt->setTransformationEpsilon(1e-6);
+    // anh_ndt->setEuclideanFitnessEpsilon(1e-6);
+    // anh_ndt->setNumThreads(4);
+    // anh_ndt->setNeighborhoodSearchMethod(pclomp::DIRECT26);
+
+    pcl::IterativeClosestPoint<pcl::PointXYZI, pcl::PointXYZI> icp;
+    icp.setMaximumIterations(100);
+    icp.setMaxCorrespondenceDistance(1.0);
+    icp.setEuclideanFitnessEpsilon(1e-2);
+    icp.setRANSACIterations(0);
+    icp.setTransformationEpsilon(1e-3);
+
+    for(int i = 1; i < 31; i += 15)
     {
         palign.reset(new pcl::PointCloud<pcl::PointXYZI>());
         //init
@@ -219,19 +230,29 @@ void CallbackLidar(const sensor_msgs::PointCloud2::ConstPtr pcloud)
         TicToc ndt_time;
         ndt_time.tic();
         downSizeFilter.setInputCloud(CloudFrames[id]);
-        downSizeFilter.filter(*CloudFrames[id]);
+        downSizeFilter.filter(*source);
         downSizeFilter.setInputCloud(CloudFrames.back());
-        downSizeFilter.filter(*CloudFrames.back());
-        anh_ndt->setInputSource(CloudFrames[id]);
-        anh_ndt->setInputTarget(CloudFrames.back());
-        anh_ndt->align(*palign, init_guess.cast<float>());
-        trans = anh_ndt->getFinalTransformation();
-        int iteration = anh_ndt->getFinalNumIteration();
-        bool converged = anh_ndt->hasConverged();
-        cout<<"iteration: "<<iteration<<endl;
-        cout<<"converged: "<<converged<<endl;
-        cout<<"ndt time: "<< ndt_time.toc() << endl << endl;
-        //double ndtTime = ndt_time.toc();
+        downSizeFilter.filter(*target);
+        // anh_ndt->setInputSource(CloudFrames[id]);
+        // anh_ndt->setInputTarget(CloudFrames.back());
+        // anh_ndt->align(*palign, init_guess.cast<float>());
+        // trans = anh_ndt->getFinalTransformation();
+        // int iteration = anh_ndt->getFinalNumIteration();
+        // bool converged = anh_ndt->hasConverged();
+        // cout<<"iteration: "<<iteration<<endl;
+        // cout<<"converged: "<<converged<<endl;
+        // cout<<"ndt time: "<< ndt_time.toc() << endl << endl;
+
+        icp.setInputSource(source);
+        icp.setInputTarget(target);
+        icp.align(*palign, init_guess.cast<float>());
+
+        Eigen::Matrix4f trans(Eigen::Matrix4f::Identity());
+        trans = icp.getFinalTransformation();
+        cout<<"converged: "<<icp.hasConverged()<<endl;
+        cout<<"fitness score: "<<icp.getFitnessScore()<<endl;
+        cout<<"time: " << ndt_time.toc() << "  ms"  <<endl << endl;
+
         Eigen::Vector3d t(trans(0, 3), trans(1, 3), trans(2, 3));
         Eigen::Matrix3d R;
         Eigen::Quaterniond q;
