@@ -1,4 +1,4 @@
 <launch> 
-    <node pkg="haibo_local" type="haibo_local" name="haibo_local" output="screen"/>
+    <node pkg="haibo_local" type="haibo_local" name="haibo_local" output="screen" />
     <node launch-prefix="nice" pkg="rviz" type="rviz" name="rviz" args="-d $(find haibo_local)/rviz/gridmap.rviz" />
 </launch>
