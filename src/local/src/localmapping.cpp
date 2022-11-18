@@ -27,8 +27,8 @@ d_resolution = 0.5, d_height_diff = 0.2, i_max_thresh = 2, i_mid_thresh = 2, i_m
 vector<Eigen::Quaterniond> map_q_;
 vector<Eigen::Vector3d> map_t_;
 vector<double> map_time_;
-bool init;
-double init_time;
+bool init = false, init2 = false;
+double init_time, init_lidar;
 #define MAX_OGM std::numeric_limits<float>::max()
 #define MIN_OGM -std::numeric_limits<float>::max()
 
@@ -39,6 +39,7 @@ pcl::PointCloud<pcl::PointXYZI>::Ptr transformPointCloud(const Eigen::Quaternion
 
     for (uint32_t i = 0; i < cloud_in->points.size(); i++)
     {
+        if(cloud_in->points[i].y > -5 || cloud_in->points[i].x > 3 || cloud_in->points[i].x < -3) {continue;}
         Eigen::Vector3d point(cloud_in->points[i].x, cloud_in->points[i].y, cloud_in->points[i].z);
         Eigen::Vector3d point2 = q * point + t;
         // nan point may cause std::bad_alloc
@@ -161,9 +162,10 @@ void CallbackLidar(const sensor_msgs::PointCloud2::ConstPtr pcloud)
     Eigen::Matrix3d tmp_R;
     Eigen::Vector3d t, tmp_t;
     int index_before = 1, index_after = 1;
+    if(!init2) {init_lidar = pcloud->header.stamp.toSec(); init2 = true;}
     for(auto iter = map_time_.begin(); iter != map_time_.end(); iter++)
     {
-        if (pcloud->header.stamp.toSec() >= (*iter) && pcloud->header.stamp.toSec() <= *(iter+1))
+        if (pcloud->header.stamp.toSec() - init_lidar >= (*iter) && pcloud->header.stamp.toSec() - init_lidar<= *(iter+1))
         {
             index_before = static_cast<int>(iter - map_time_.begin());
             index_after = index_before + 1;
@@ -174,6 +176,7 @@ void CallbackLidar(const sensor_msgs::PointCloud2::ConstPtr pcloud)
     if (coff < 0 || coff > 1)
     {   
         printf("index_before : %d index_after : %d  map_time_.size(): %d \n", index_before, index_after, map_time_.size());
+        printf("cloud time : %6lf  map_time_.front() : %6lf  map_time_.back(): %6lf \n", pcloud->header.stamp.toSec() - init_lidar, map_time_.front(), map_time_.back());
         q = map_q_.back();
         t = map_t_.back(); 
     }
@@ -212,7 +215,8 @@ void CallbackLidar(const sensor_msgs::PointCloud2::ConstPtr pcloud)
     icp.setRANSACIterations(0);
     icp.setTransformationEpsilon(1e-3);
 
-    for(int i = 1; i < 31; i += 15)
+    *tmp += *CloudFrames.back();
+    for(int i = 6; i < 20; i += 5)
     {
         palign.reset(new pcl::PointCloud<pcl::PointXYZI>());
         //init
@@ -221,9 +225,10 @@ void CallbackLidar(const sensor_msgs::PointCloud2::ConstPtr pcloud)
         tmp_R = pointcloud_q.back().matrix().inverse() * pointcloud_q[id].matrix();
         tmp_q = Eigen::Quaterniond(tmp_R);
         tmp_t = pointcloud_q.back().matrix().inverse() * (pointcloud_t[id] - pointcloud_t.back());
-        Eigen::Vector3d angle = tmp_q.matrix().eulerAngles(2,1,0);
-        printf("tmp_t: %.2lf, %.2lf, %.2lf\n", tmp_t(0), tmp_t(1), tmp_t(2));
-        printf("tmp_q : %.3lf, %.3lf, %.3lf\n", angle(0), angle(1), angle(2));
+        // Eigen::Vector3d angle = tmp_q.matrix().eulerAngles(2,1,0);
+        // printf("tmp_t: %.2lf, %.2lf, %.2lf\n", tmp_t(0), tmp_t(1), tmp_t(2));
+        // printf("tmp_q : %.3lf, %.3lf, %.3lf\n", angle(0), angle(1), angle(2));
+        /*
         Eigen::Translation3d init_translation(tmp_t(0), tmp_t(1), tmp_t(2));
         Eigen::AngleAxisd init_rotation(tmp_q);
         Eigen::Matrix4d init_guess = (init_translation * init_rotation) * Eigen::Matrix4d::Identity();
@@ -260,7 +265,9 @@ void CallbackLidar(const sensor_msgs::PointCloud2::ConstPtr pcloud)
         q=Eigen::Quaterniond(R);
         pcl::PointCloud<pcl::PointXYZI>::Ptr trans_pcd(new pcl::PointCloud<pcl::PointXYZI>());
         trans_pcd = transformPointCloud(q, t, CloudFrames[id]);
-        // trans_pcd = transformPointCloud(tmp_q, tmp_t, CloudFrames[id]);
+        */
+        pcl::PointCloud<pcl::PointXYZI>::Ptr trans_pcd(new pcl::PointCloud<pcl::PointXYZI>());
+        trans_pcd = transformPointCloud(tmp_q, tmp_t, CloudFrames[id]);
 
         *tmp += *trans_pcd;
         // debug : save pcd
@@ -302,9 +309,9 @@ void CallbackLidar(const sensor_msgs::PointCloud2::ConstPtr pcloud)
     cout <<"lidar size():  " << CloudFrames.size() << endl;
 }
 
-void CallbackPose(const geometry_msgs::PoseStamped::ConstPtr pose)
+void CallbackPose(const geometry_msgs::PoseStamped::ConstPtr &pose)
 {
-    if(!init) {init_time = pose->header.stamp.toSec();}
+    if(!init) {init_time = pose->header.stamp.toSec(); init = true;}
     Eigen::Matrix3d R; 
     Eigen::Quaterniond last_q;
     Eigen::Vector3d last_t;
@@ -315,7 +322,7 @@ void CallbackPose(const geometry_msgs::PoseStamped::ConstPtr pose)
     last_t = Eigen::Vector3d(pose->pose.position.x, pose->pose.position.y, 0);
     map_q_.push_back(last_q);
     map_t_.push_back(last_t);
-    map_time_.push_back(pose->header.stamp.toSec());
+    map_time_.push_back(pose->header.stamp.toSec() - init_time);
     pose_received = true;
     cout << "time size(): " <<map_time_.size() << endl;
 }
