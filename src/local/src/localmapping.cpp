@@ -59,6 +59,24 @@ pcl::PointCloud<pcl::PointXYZI>::Ptr transformPointCloud(const Eigen::Quaternion
     return cloud_out;
 }
 
+void pointcloud_in_range(const double min_range, const double max_range,
+                         pcl::PointCloud<pcl::PointXYZI>::Ptr pcloud_in,
+                         pcl::PointCloud<pcl::PointXYZI>::Ptr pcloud_out)
+{
+    pcloud_out->clear();
+    for (uint32_t i = 0; i < pcloud_in->points.size(); i++)
+    {
+        double x = pcloud_in->points[i].x;
+        double y = pcloud_in->points[i].y;
+        double s = sqrt(x * x + y * y);
+        if (s >= min_range && s <= max_range)
+            pcloud_out->points.push_back(pcloud_in->points[i]);
+    }
+
+    pcloud_out->height = 1;
+    pcloud_out->width = pcloud_out->points.size();
+}
+
 void createLocalMap(const pcl::PointCloud<pcl::PointXYZI>::Ptr merged_cloud)
 {
     int i_rows = (d_height2 - d_height1) / d_resolution;
@@ -154,9 +172,11 @@ void CallbackLidar(const sensor_msgs::PointCloud2::ConstPtr pcloud)
     if (pcloud != NULL)
     {
         pcl::PointCloud<pcl::PointXYZI>::Ptr plidar(new pcl::PointCloud<pcl::PointXYZI>());
+        pcl::PointCloud<pcl::PointXYZI>::Ptr plidarAft(new pcl::PointCloud<pcl::PointXYZI>());
         plidar.reset(new pcl::PointCloud<pcl::PointXYZI>());
         pcl::fromROSMsg(*pcloud, *plidar);
-        CloudFrames.push_back(plidar); 
+        pointcloud_in_range(2, 100, plidar, plidarAft);
+        CloudFrames.push_back(plidarAft); 
     }
     Eigen::Quaterniond q, tmp_q;
     Eigen::Matrix3d tmp_R;
@@ -228,7 +248,7 @@ void CallbackLidar(const sensor_msgs::PointCloud2::ConstPtr pcloud)
         // Eigen::Vector3d angle = tmp_q.matrix().eulerAngles(2,1,0);
         // printf("tmp_t: %.2lf, %.2lf, %.2lf\n", tmp_t(0), tmp_t(1), tmp_t(2));
         // printf("tmp_q : %.3lf, %.3lf, %.3lf\n", angle(0), angle(1), angle(2));
-        /*
+        
         Eigen::Translation3d init_translation(tmp_t(0), tmp_t(1), tmp_t(2));
         Eigen::AngleAxisd init_rotation(tmp_q);
         Eigen::Matrix4d init_guess = (init_translation * init_rotation) * Eigen::Matrix4d::Identity();
@@ -265,9 +285,9 @@ void CallbackLidar(const sensor_msgs::PointCloud2::ConstPtr pcloud)
         q=Eigen::Quaterniond(R);
         pcl::PointCloud<pcl::PointXYZI>::Ptr trans_pcd(new pcl::PointCloud<pcl::PointXYZI>());
         trans_pcd = transformPointCloud(q, t, CloudFrames[id]);
-        */
-        pcl::PointCloud<pcl::PointXYZI>::Ptr trans_pcd(new pcl::PointCloud<pcl::PointXYZI>());
-        trans_pcd = transformPointCloud(tmp_q, tmp_t, CloudFrames[id]);
+        
+        // pcl::PointCloud<pcl::PointXYZI>::Ptr trans_pcd(new pcl::PointCloud<pcl::PointXYZI>());
+        // trans_pcd = transformPointCloud(tmp_q, tmp_t, CloudFrames[id]);
 
         *tmp += *trans_pcd;
         // debug : save pcd

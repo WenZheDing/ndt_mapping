@@ -3,7 +3,9 @@
         "iostream": "cpp",
         "vector": "cpp",
         "unordered_map": "cpp",
-        "ostream": "cpp"
+        "ostream": "cpp",
+        "bitset": "cpp",
+        "memory": "cpp"
     },
     "python.autoComplete.extraPaths": [
         "/opt/ros/melodic/lib/python2.7/dist-packages"
