@@ -24,6 +24,8 @@ find_package(Eigen3)
 find_package(PCL 1.8 REQUIRED)
 link_directories(${PCL_LIBRARY_DIRS})
 
+set(CMAKE_BUILD_TYPE Debug)
+
 add_definitions(-DROOT_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/\")
 
 
